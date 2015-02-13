@@ -1,0 +1,154 @@
+---
+title: "Class Project: Practical Machine Learning"
+output: html_document
+---
+
+### Synopsis
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a         large amount of data about personal activity relatively inexpensively. The goal for this project is to
+quantify how well an activity is done from data gathered from accelerometers on the belt, forearm,
+and dumbell of 6 participants.  
+
+### Executive Summary & Conclusions 
+In this project, two prediction models are evaluated.   The algorithms used are decision tree and
+random forest.  The random forest model is 99.64% accurate while the decision tree model is 71% 
+accurate.   The prediction model created with the random forest algorithm is used to evaluate the
+20 observations required for the submission portion of this project. The details for arriving at
+this conclusion are provided in the steps below. 
+        
+### PreProcessing   
+#### Load libraries, set global options, set seed (2345)    
+```{r step01, echo=FALSE, warning=FALSE}
+library(knitr)
+library(caret)
+library(ggplot2)
+library(randomForest)
+library(rpart)
+library(rpart.plot)
+library(AppliedPredictiveModeling)
+
+set.seed(2345)
+```
+   
+#### Download, read, preprocess the data sets 
+* Data has been downloaded and saved to a local directory   
+* Load the train and test data sets; convert some strings to NAs (blanks, "<NA>", NA, #DIV/o!)   
+* Delete columns with missing (NA) values     
+
+```{r step02, echo=TRUE}
+#download.file("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv", "training.csv")
+#download.file("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv", "test.csv")
+
+# Read in data  
+train <- read.csv("training.csv", na.strings=c("", "NA", "#DIV/0!", "<NA>"))  
+test <- read.csv("test.csv", na.strings=c("", "NA", "#DIV/0!", "<NA>"))  
+count.Cols <- dim(train)[2]   
+
+# Delete columns with NA/missing values
+train <- train[,colSums(is.na(train)) == 0]
+test <- test[,colSums(is.na(test)) == 0]
+```
+        Rows in train set: `r dim(train)[1]`; original #columns: `r count.Cols`;  current #columns: `r dim(train)[2]`       
+     
+* Check for columns with near zero variance and remove    
+* Remove columns that add little predictive value (x, user_name, date related columns)            
+```{r step03, echo=TRUE}
+# Derive index of columns with near zero values  
+nzindex <- nearZeroVar(train)
+
+# Remove columns belonging to nzindex
+train <- train[,-nzindex]
+
+# Remove columns not useful for prediction: x, user_name, and date related columns
+train <- train[, -c(1:7)]
+```
+        Final train data set: Row count: `r dim(train)[1] `; Column count: `r dim(train)[2] ` 
+
+#### Split the Train data into two subsets: one for training and one for testing 
+
+* Create an 80/20 split of the Train data       
+```{r step04, echo=TRUE}
+adData <- data.frame(train)
+trainIndex = createDataPartition(y=train$classe, p = 0.80, list=FALSE)
+Training = adData[trainIndex,]
+Testing = adData[-trainIndex,]
+```
+
+#### Profile and plot the final training data set  
+```{r step05, echo=FALSE}
+dim(Training) 
+ggplot(data = Training, aes(x=classe), fill = factor(classe)) + 
+        geom_histogram(binwidth=.5, colour="black", fill="pink") +  
+        xlab("Classe") + ylab("Count") + labs(title="Classe vs. Count") 
+```
+
+### Train and Compare Two Prediction Models   
+* Two models will be created using decision tree and random forest.  The most accurate model will be determined based on the confusion matrix from each model    
+
+#### Create first prediciton model: Decision Tree   
+* Fit the model    
+```{r step06, echo=TRUE}
+fitMod1 <- rpart(classe ~., data=Training, method="class")
+
+# Prediction:
+predMod1 <- predict(fitMod1, Testing, type = "class")
+```
+* Plot the decision tree   
+```{r step07, echo=TRUE}
+rpart.plot(fitMod1, main="Classification Tree", extra=102, under=TRUE, faclen=0)
+```
+   
+* Generate the confusion matrix     
+```{r step08, echo=TRUE}
+cm1 <- confusionMatrix(predMod1, Testing$classe)
+cm1$table
+```
+
+#### Create second prediction model: Random Forest
+* Fit the model      
+```{r step09, echo=TRUE}
+fitMod2 <- randomForest(classe ~., data=Training, method="class")
+
+# Prediction:
+predMod2 <- predict(fitMod2, Testing, type = "class")
+```
+
+* Generate the confusion matrix  
+```{r step10, echo=TRUE}
+cm2 <- confusionMatrix(predMod2, Testing$classe)
+cm2$table
+```
+
+#### Compare Accuracy, Out of sample error      
+```{r step11, echo=TRUE}
+accuracyMod1 <-  postResample(predMod1, Testing$classe)
+accuracyMod2 <-  postResample(predMod2, Testing$classe)
+OutOfSampleErr1 <- 1 - accuracyMod1  
+OutOfSampleErr2 <- 1 - accuracyMod2  
+```
+        Accuracy for Random Forest prediction: `r accuracyMod1[1]`;  Out of sample error: `r OutOfSampleErr1[1]`   
+        Accuracy for Decision Tree prediction: `r accuracyMod2[1]`;  Out of sample error: `r OutOfSampleErr2[1]`   
+        The Random Forest algorithm performed better than the Decision Tree algorithm.  
+        For this reason the Random rest model is selected.  
+
+### Submission: Apply to 20 test cases
+* Prepare and submit Part 2 of the assignment.   Random forest model will be used to predict the outcome.       
+```{r step20, echo=FALSE}
+pml_write_files = function(x) {
+   n = length(x)
+   for( i in 1:n) {
+           filename = paste0("problem_id_", i, ".txt")
+           write.table(x[i], file=filename, quote=FALSE,row.names=FALSE,col.names=FALSE)
+  }
+}
+
+predMod3 <- predict(fitMod2, test, type="class")
+predMod3
+```
+
+### References 
+[1] The data for this project downloaded from Human Activity Recognition website: 
+                http://groupware.les.inf.puc-rio.br/har
+[2] Citation for data used in this project:
+       Velloso, E.; Bulling, A.; Gellersen, H.; Ugulino, W.; Fuks, H. Qualitative Activity 
+       Recognition of Weight Lifting Exercises. Proceedings of 4th International Conference in
+       Cooperation with SIGCHI (Augmented Human '13) . Stuttgart, Germany: ACM SIGCHI, 2013. 
