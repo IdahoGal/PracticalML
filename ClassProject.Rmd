@@ -4,19 +4,22 @@ output: html_document
 ---
 
 ### Synopsis
-Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a         large amount of data about personal activity relatively inexpensively. The goal for this project is to
-quantify how well an activity is done from data gathered from accelerometers on the belt, forearm,
-and dumbell of 6 participants.  
+Using wearable devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. This data is being used to transform how individuals approach health. In this project, data collected from wearable devices will be used to assess how well a participant is performing bar bell lifts. The data is collected from six participants who are wearing accelerometers on the belt, forearm, and dumbell.   The goal of the project is to determine how well the bar bell lifts are being performed which is classified into one of the following: 
+        Class A:  Lifts were performed exactly according to specification
+        Class B:  Lifts were performed by throwing the elbows to the front
+        Class C:  Lifts were performed by only lifting the dumbell halfway
+        Class D:  Lifts were performed by lowering the dumbell only halfway
+        Class E:  Lifts were performed by throwing the hips to the front
 
 ### Executive Summary & Conclusions 
-In this project, two prediction models are evaluated.   The algorithms used are decision tree and
-random forest.  The random forest model is 99.64% accurate while the decision tree model is 71% 
-accurate.   The prediction model created with the random forest algorithm is used to evaluate the
-20 observations required for the submission portion of this project. The details for arriving at
-this conclusion are provided in the steps below. 
+In this project, personal activity data is used to evaluate how well an activity was performed.  Six participants were asked to perform barbell lifts correcty and incorrectly while measurements were taken from accelerometers on the belt and forearms and bar bells.  In all there were 19,622 observations and 160 features.  From this data two prediction models are created and evaluated.  The algorithms used for the prediction models included decision tree and random forest.  Predictions generated from the Random Forest model were more accurate than predictions generated from the decision tree model.  As a result, the random forest model is used to evaluate 20 observations required for the submission portion of this project.  The details and results for this project are provided in the steps below.  
+
+Caveat:  The purpose of this project is limited to using data captured through wearable devices.  It is not intended to replace experience, good judgement, or to suggest behavioral changes related to bar bell lifts.     
         
 ### PreProcessing   
-#### Load libraries, set global options, set seed (2345)    
+The data used for this project were downloaded from HAR website (see Resources section) and stored locally.  The data includes two files; one to be used for training and testing the prediction models and the other file includes the 20 observations and will be used for the valiation and submission portion of this project.  In this section, both data sets will be read in.   The data sets will be prepared for analysis which means some data strings will be normalized and convererted to NAs (blanks, "<NA>", NA, #DIV/o!).  The features will then be evaluated for predictive value and features that are not useful will be removed.     
+
+* Load libraries, set global options and seed  
 ```{r step01, echo=FALSE, warning=FALSE}
 library(knitr)
 library(caret)
@@ -24,17 +27,13 @@ library(ggplot2)
 library(randomForest)
 library(rpart)
 library(rpart.plot)
-library(AppliedPredictiveModeling)
+#library(AppliedPredictiveModeling)
 
 set.seed(2345)
 ```
    
-#### Download, read, preprocess the data sets 
-* Data has been downloaded and saved to a local directory   
-* Load the train and test data sets; convert some strings to NAs (blanks, "<NA>", NA, #DIV/o!)   
-* Delete columns with missing (NA) values     
-
-```{r step02, echo=TRUE}
+* Read in the data, convert empty or missing strings to NA, remove columns with NA values.   
+```{r step02, echo=FALSE}
 #download.file("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv", "training.csv")
 #download.file("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv", "test.csv")
 
@@ -51,7 +50,7 @@ test <- test[,colSums(is.na(test)) == 0]
      
 * Check for columns with near zero variance and remove    
 * Remove columns that add little predictive value (x, user_name, date related columns)            
-```{r step03, echo=TRUE}
+```{r step03, echo=FALSE}
 # Derive index of columns with near zero values  
 nzindex <- nearZeroVar(train)
 
@@ -63,76 +62,84 @@ train <- train[, -c(1:7)]
 ```
         Final train data set: Row count: `r dim(train)[1] `; Column count: `r dim(train)[2] ` 
 
-#### Split the Train data into two subsets: one for training and one for testing 
-
-* Create an 80/20 split of the Train data       
-```{r step04, echo=TRUE}
+* Split the data into two subsets (60/40); one to be used for training and one to be used for testing           
+```{r step04, echo=FALSE}
 adData <- data.frame(train)
-trainIndex = createDataPartition(y=train$classe, p = 0.80, list=FALSE)
+trainIndex = createDataPartition(y=train$classe, p = 0.60, list=FALSE)
 Training = adData[trainIndex,]
 Testing = adData[-trainIndex,]
 ```
 
-#### Profile and plot the final training data set  
+* Profile and plot the final training data set      
 ```{r step05, echo=FALSE}
 dim(Training) 
 ggplot(data = Training, aes(x=classe), fill = factor(classe)) + 
         geom_histogram(binwidth=.5, colour="black", fill="pink") +  
-        xlab("Classe") + ylab("Count") + labs(title="Classe vs. Count") 
+        xlab("Classe") + ylab("Count") + labs(title="Classe Counts (Training Data Set") 
 ```
 
 ### Train and Compare Two Prediction Models   
-* Two models will be created using decision tree and random forest.  The most accurate model will be determined based on the confusion matrix from each model    
+In this section two predictive models will be created; one using decision tree and one using random forest.  Both models will be trained on the same data set (Training) and tested on the same data set (Testing). The decision tree will be created using the rpart function in R and the 2nd model will be created using the randomForest function in R. One model will be selected as most accurate based on output from the confusionMatrix function in R.  
 
-#### Create first prediciton model: Decision Tree   
-* Fit the model    
+Out-of-sample error will be applied in the following way:   
+     * Expected out-of-sample error will be determined for the final (validation) data set.   
+     * It will be calculated as 1 - accuracy of the best performing model using testing data set.      
+     
+Cross validation will be applied in the following manner:         
+     * If the accuracy of a baseline model is low, there is no concern for over-fitting so cross-validation will not be applied.    
+     * If the accuracy of the models is high, cross validation will be considered.   
+
+#### Create first prediction model: Decision Tree   
+* Fit the model and plot the decision tree    
 ```{r step06, echo=TRUE}
 fitMod1 <- rpart(classe ~., data=Training, method="class")
-
-# Prediction:
-predMod1 <- predict(fitMod1, Testing, type = "class")
-```
-* Plot the decision tree   
-```{r step07, echo=TRUE}
 rpart.plot(fitMod1, main="Classification Tree", extra=102, under=TRUE, faclen=0)
 ```
-   
-* Generate the confusion matrix     
-```{r step08, echo=TRUE}
+
+* Generate the prediction and confusion matrix   
+```{r step07, echo=TRUE}
+# Prediction:
+predMod1 <- predict(fitMod1, Testing, type = "class")
 cm1 <- confusionMatrix(predMod1, Testing$classe)
 cm1$table
+# printcp(fitMod1)
 ```
 
 #### Create second prediction model: Random Forest
 * Fit the model      
 ```{r step09, echo=TRUE}
 fitMod2 <- randomForest(classe ~., data=Training, method="class")
-
-# Prediction:
-predMod2 <- predict(fitMod2, Testing, type = "class")
 ```
 
-* Generate the confusion matrix  
+* Generate the prediction and the confusion matrix  
 ```{r step10, echo=TRUE}
+# Prediction:
+predMod2 <- predict(fitMod2, Testing, type = "class")
 cm2 <- confusionMatrix(predMod2, Testing$classe)
 cm2$table
 ```
 
-#### Compare Accuracy, Out of sample error      
-```{r step11, echo=TRUE}
-accuracyMod1 <-  postResample(predMod1, Testing$classe)
-accuracyMod2 <-  postResample(predMod2, Testing$classe)
-OutOfSampleErr1 <- 1 - accuracyMod1  
-OutOfSampleErr2 <- 1 - accuracyMod2  
+#### Compare Accuracy, Consider Cross-Validation   
+```{r step12, echo=TRUE}
+accuracyDTTest <-  postResample(predMod1, Testing$classe)
+accuracyRFTest <-  postResample(predMod2, Testing$classe)
+OutOfSampleErrRFTrain <- 1 - accuracyRFTest  
+OutOfSampleErrRFTest <- 1 - accuracyRFTest  
 ```
-        Accuracy for Random Forest prediction: `r accuracyMod1[1]`;  Out of sample error: `r OutOfSampleErr1[1]`   
-        Accuracy for Decision Tree prediction: `r accuracyMod2[1]`;  Out of sample error: `r OutOfSampleErr2[1]`   
-        The Random Forest algorithm performed better than the Decision Tree algorithm.  
-        For this reason the Random rest model is selected.  
+        Findings:
+           1.  Accuracy for the Decision Tree model is low on the Testing Set: `r accuracyDTTest[1]`. 
+               There is no concern for over-fitting so there is no need for cross-validation.  
+           2.  The accuracy of the Random Forest model is very high: `r accuracyRFTest[1]`.  
+               However, Random Forest algorithm uses bootstrap sampling so there is no added-value value 
+               to apply cross-validation to protect against over-fitting.  
+           Therefore, cross-validation will not be applied to either model.  
 
-### Submission: Apply to 20 test cases
-* Prepare and submit Part 2 of the assignment.   Random forest model will be used to predict the outcome.       
-```{r step20, echo=FALSE}
+#### Final Accuracy and Out-of-sample-error
+The Random Forest algorithm performed better than the Decision Tree algorithm with an accuracy of `r accuracyRFTest[1]`. For this reason the Random Forest model is selected to predict the classe outcome for each of the original 20 observations.  The expected out-of-sample error for the original 20 observations is expected to be `r OutOfSampleErrRFTest[1]` which means there should be no mis-classified observations.    
+
+### Submission: Prediction on Original Test Set  
+* Prepare and submit Part 2 of the assignment.         
+```{r step30, echo=FALSE}
 pml_write_files = function(x) {
    n = length(x)
    for( i in 1:n) {
@@ -143,6 +150,7 @@ pml_write_files = function(x) {
 
 predMod3 <- predict(fitMod2, test, type="class")
 predMod3
+#pml_write_files(predMod3)
 ```
 
 ### References 
